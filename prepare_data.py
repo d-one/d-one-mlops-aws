@@ -1,17 +1,37 @@
-# Author:      CD4ML Working Group @ D ONE
-# Description: Use this script to split the raw input data into a train and
-#              test split
-# ================================================================================
 
-import logging
+import argparse
+import logger
 import pandas as pd
 from typing import List, Tuple, Union
 from datetime import datetime, timedelta
-from assertions import assert_col_of_df
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler())
 
+def assert_col_of_df(df: pd.DataFrame, col: Union[List[str], str]) -> None:
+    """Helper function to assert that a column `col` is a column of `df`.
+    
+    Args:
+        df: Dataframe.
+        col: String value to test.
+    
+    Returns:
+        None.
+        
+    Raises:
+        ValueError if `col` is not a column of `df`.
+    """
+    if isinstance(col, str):
+        col = [col]
 
+    for c in col:
+        try:
+            assert c in df.columns      
+        except AssertionError:
+            raise ValueError(f"Invalid input value. Column {c} is not a column of df.")
+
+            
 def get_train_test_split(
         df: pd.DataFrame,
         n_days_test: int
@@ -204,3 +224,97 @@ def wrap_transform_data(
     x, y = split_features_target(df=df, features=features, target=target) 
     
     return x, y
+
+
+# ----- CONSTANTS ----- #
+# Columns of df
+# Error column <> target
+COL_ERRORS = 'categories_sk'
+# Power produced column (used for filtering out small values)
+COL_POWER = 'power'
+# Error (i.e., target) classification list
+ERRORS_TO_CLASSIFY = [0, 3, 5, 7, 8]
+# Features to consider for the model
+FEATURES = ['wind_speed', 'power', 'nacelle_direction', 'wind_direction',
+            'rotor_speed', 'generator_speed', 'temp_environment',
+            'temp_hydraulic_oil', 'temp_gear_bearing', 'cosphi',
+            'blade_angle_avg', 'hydraulic_pressure']
+# Power values to filter out
+MIN_POWER = 0.05
+# Filname of the raw data file
+RAW_DATA_FILE = 'wind_turbines.csv'
+
+
+if __name__ == '__main__':
+    
+    logger.debug(f'Preprocessing job started.')
+    # Parse the SDK arguments that are passed when creating the SKlearn container
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n_test_days", type=int, default=10)
+    parser.add_argument("--n_val_days", type=int, default=10)
+    args, _ = parser.parse_known_args()
+
+    logger.debug(f"Received arguments {args}.")
+
+    # Read in data locally in the container
+    input_data_path = os.path.join("/opt/ml/processing/input", RAW_DATA_FILE)
+    logger.debug(f"Reading input data from {input_data_path}")
+    # Read raw input data
+    df = pd.read_csv(input_data_path)
+    logger.debug(f"Shape of data is:{df.shape}")
+
+    # ---- Preprocess the data set ----
+    logger.debug("Split data into training+validation and test set.")
+    df_train_valid, df_test = get_train_test_split(df=df, n_days_test=args.n_test_days) 
+
+    logger.debug("Split training+validation into training and validation set.")
+    df_train, df_val = get_train_test_split(df=df, n_days_test=args.n_val_days) 
+
+    logger.debug("Transforming training data.")
+    x_train, y_train = wrap_transform_data(
+        df=df_train,
+        col_power=COL_POWER,
+        min_power=MIN_POWER,
+        col_errors=COL_ERRORS,
+        errors_to_classify=ERRORS_TO_CLASSIFY,
+        features=FEATURES,
+        target=COL_ERRORS
+    )
+    
+    logger.debug("Transforming validation data.")
+    x_val, y_val = wrap_transform_data(
+        df=df_val,
+        col_power=COL_POWER,
+        min_power=MIN_POWER,
+        col_errors=COL_ERRORS,
+        errors_to_classify=ERRORS_TO_CLASSIFY,
+        features=FEATURES,
+        target=COL_ERRORS
+    )
+
+    # Create local output directories. These directories live on the container that is spun up.
+    try:
+        os.makedirs("/opt/ml/processing/train")
+        os.makedirs("/opt/ml/processing/validation")
+        os.makedirs("/opt/ml/processing/test")
+        print("Successfully created directories")
+    except Exception as e:
+        # if the Processing call already creates these directories (or directory otherwise cannot be created)
+        logger.debug(e)
+        logger.debug("Could Not Make Directories.")
+        pass
+
+    # Save data locally on the container that is spun up.
+    try:
+        pd.DataFrame(x_train).to_csv("/opt/ml/processing/train/x_train.csv", header=True, index=False)
+        pd.DataFrame(y_train).to_csv("/opt/ml/processing/train/y_train.csv", header=True, index=False)
+        pd.DataFrame(x_val).to_csv("/opt/ml/processing/validation/x_val.csv", header=True, index=False)
+        pd.DataFrame(y_val).to_csv("/opt/ml/processing/validation/y_val.csv", header=True, index=False)
+        pd.DataFrame(df_test).to_csv("/opt/ml/processing/test/test.csv", header=True, index=False)
+        logger.debug("Files Successfully Written Locally")
+    except Exception as e:
+        logger.debug("Could Not Write the Files")
+        logger.debug(e)
+        pass
+
+    logger.debug("Finished running processing job")
