@@ -1,9 +1,11 @@
 
 import argparse
-import logger
+import logging
+import os
 import pandas as pd
-from typing import List, Tuple, Union
 from datetime import datetime, timedelta
+from typing import List, Tuple, Union
+
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -247,30 +249,30 @@ RAW_DATA_FILE = 'wind_turbines.csv'
 
 if __name__ == '__main__':
     
-    logger.debug(f'Preprocessing job started.')
+    logger.info(f'Preprocessing job started.')
     # Parse the SDK arguments that are passed when creating the SKlearn container
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_test_days", type=int, default=10)
     parser.add_argument("--n_val_days", type=int, default=10)
     args, _ = parser.parse_known_args()
 
-    logger.debug(f"Received arguments {args}.")
+    logger.info(f"Received arguments {args}.")
 
     # Read in data locally in the container
     input_data_path = os.path.join("/opt/ml/processing/input", RAW_DATA_FILE)
-    logger.debug(f"Reading input data from {input_data_path}")
+    logger.info(f"Reading input data from {input_data_path}")
     # Read raw input data
     df = pd.read_csv(input_data_path)
-    logger.debug(f"Shape of data is:{df.shape}")
+    logger.info(f"Shape of data is: {df.shape}")
 
     # ---- Preprocess the data set ----
-    logger.debug("Split data into training+validation and test set.")
+    logger.info("Split data into training+validation and test set.")
     df_train_valid, df_test = get_train_test_split(df=df, n_days_test=args.n_test_days) 
 
-    logger.debug("Split training+validation into training and validation set.")
-    df_train, df_val = get_train_test_split(df=df, n_days_test=args.n_val_days) 
+    logger.info("Split training+validation into training and validation set.")
+    df_train, df_val = get_train_test_split(df=df_train_valid, n_days_test=args.n_val_days) 
 
-    logger.debug("Transforming training data.")
+    logger.info("Transforming training data.")
     x_train, y_train = wrap_transform_data(
         df=df_train,
         col_power=COL_POWER,
@@ -281,7 +283,7 @@ if __name__ == '__main__':
         target=COL_ERRORS
     )
     
-    logger.debug("Transforming validation data.")
+    logger.info("Transforming validation data.")
     x_val, y_val = wrap_transform_data(
         df=df_val,
         col_power=COL_POWER,
@@ -311,10 +313,10 @@ if __name__ == '__main__':
         pd.DataFrame(x_val).to_csv("/opt/ml/processing/validation/x_val.csv", header=True, index=False)
         pd.DataFrame(y_val).to_csv("/opt/ml/processing/validation/y_val.csv", header=True, index=False)
         pd.DataFrame(df_test).to_csv("/opt/ml/processing/test/test.csv", header=True, index=False)
-        logger.debug("Files Successfully Written Locally")
+        logger.info("Files Successfully Written Locally")
     except Exception as e:
         logger.debug("Could Not Write the Files")
         logger.debug(e)
         pass
 
-    logger.debug("Finished running processing job")
+    logger.info("Finished running processing job")
