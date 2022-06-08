@@ -6,10 +6,12 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import List, Tuple, Union
 
-
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler())
+
+pd.options.mode.chained_assignment = None  # default='warn'
+
 
 def assert_col_of_df(df: pd.DataFrame, col: Union[List[str], str]) -> None:
     """Helper function to assert that a column `col` is a column of `df`.
@@ -126,68 +128,38 @@ def filter_power(df: pd.DataFrame, col_power: str, min_power: float) -> pd.DataF
     return df
 
 
-def transform_error_types(
-    df: pd.DataFrame,
-    col_errors: str,
-    errors_to_classify: List[int]
-    )-> pd.DataFrame:
-    """Transforms error types.
+def process_target(df: pd.DataFrame, col_target: str):
+    """Processes the target column by:
+        1. Replacing error types 1 and 0 with 1.
+        2. Filling nulls with 0.
+        3. Make sure the target column is in the first column of the dataframe.
     
-    Error types are classified according to the `errors_to_classify`. If the error
-    type is not in the list, it will be replaced with 9. Nulls are replaced with
-    0.
-
     Args:
-        df: Raw input data.
-        col_errors: Column of `df` with the error types.
-        errors_to_classify: List of error types that should be considered.
+        df: Raw input dataframe.
+        col_target: Target column
     
     Returns:
-        Dataframe with transformed error types.
+        Dataframe with target column processed.
     """
-    assert_col_of_df(df=df, col=col_errors)
-
-    df[col_errors] = (
-        df
-        .loc[:, col_errors]
-        .fillna(0)
-        .apply(lambda x: int(x))
-        .apply(lambda x: x if x in errors_to_classify else 9)
-    )
-    logger.info(f"Transformed error types in column {col_errors}.")
-
+    assert_col_of_df(df=df, col=col_target)
+    
+    # Make sure that the 0 error type is also mapped to 1 (we do a binary classification later)
+    df.loc[df[col_target] == 0, col_target] = 1
+    
+    df = fill_nulls(df=df, col=col_target)
+    
+    # Reorder columns
+    colnames = list(df.columns)
+    colnames.insert(0, colnames.pop(colnames.index(col_target)))
+    df = df[colnames]
+    
     return df
-
-
-def split_features_target(
-    df: pd.DataFrame,
-    features: List[str],
-    target: str
-    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Function to split the dataframe into input features and labels.
-    
-    Args:
-        df: Raw input data.
-        features: List of the features to be included in the transformation.
-        target: Target column.
-    
-    Returns:
-        Tuple[pd.DataFrame]: Transformed dataframes (input features and labels).
-    """
-    assert_col_of_df(df=df, col=(features + [target]))
-
-    y = df.loc[:, target]
-    x = df.loc[:, features]
-    logger.info(f"Split dataframe into features with shape {x.shape} and target with shape {y.shape}.")
-    return x, y
 
 
 def wrap_transform_data(
     df: pd.DataFrame,
     col_power: str,
     min_power: float,
-    col_errors: str,
-    errors_to_classify: List[int],
     features: List[str],
     target: str
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -195,17 +167,15 @@ def wrap_transform_data(
     
     Processing is applied in the following steps:
         1. Filtering out low power values
-        2. Transforming error types
-        3. Fill nuls in all of the feature columns
-        4. Split dataset into features and target (x, y)
+        2. Process target column
+        3. Fill nulls in all of the feature columns
+        4. Select only relevant columns
         
     Args:
         df: Input dataframe.
         col_power: Column of `df` with the power production.
         min_power: Minimum values of power production considered. Rows with smaller
             values are filtered out.
-        col_errors: Column of `df` with the error types.
-        errors_to_classify: List of error types that should be considered.
         features: List of the features to be included in the transformation.
         target: Target column.
     
@@ -214,28 +184,26 @@ def wrap_transform_data(
     """
     # 1. Filter out low power
     df = filter_power(df=df, col_power=col_power, min_power=min_power)
+    
+    # 2. Process target clumn
+    df = process_target(df=df, col_target=target)
 
-    # 2. Transform error types
-    df = transform_error_types(df=df, col_errors=col_errors, errors_to_classify=errors_to_classify)
-
-    # 3. Fill nulls in all of the feature columns
+    # 3. Fill nulls in all of the feature columns and select them
     for feat in features:
         df = fill_nulls(df=df, col=feat)
-
-    # 4. Split dataset into features and target
-    x, y = split_features_target(df=df, features=features, target=target) 
     
-    return x, y
+    # 4. Select only relevant columns
+    df = df[[target] + features]
+    
+    return df
 
 
 # ----- CONSTANTS ----- #
 # Columns of df
 # Error column <> target
-COL_ERRORS = 'categories_sk'
+COL_ERRORS = 'subtraction'
 # Power produced column (used for filtering out small values)
 COL_POWER = 'power'
-# Error (i.e., target) classification list
-ERRORS_TO_CLASSIFY = [0, 3, 5, 7, 8]
 # Features to consider for the model
 FEATURES = ['wind_speed', 'power', 'nacelle_direction', 'wind_direction',
             'rotor_speed', 'generator_speed', 'temp_environment',
@@ -273,27 +241,32 @@ if __name__ == '__main__':
     df_train, df_val = get_train_test_split(df=df_train_valid, n_days_test=args.n_val_days) 
 
     logger.info("Transforming training data.")
-    x_train, y_train = wrap_transform_data(
+    train = wrap_transform_data(
         df=df_train,
         col_power=COL_POWER,
         min_power=MIN_POWER,
-        col_errors=COL_ERRORS,
-        errors_to_classify=ERRORS_TO_CLASSIFY,
         features=FEATURES,
         target=COL_ERRORS
     )
     
     logger.info("Transforming validation data.")
-    x_val, y_val = wrap_transform_data(
+    val = wrap_transform_data(
         df=df_val,
         col_power=COL_POWER,
         min_power=MIN_POWER,
-        col_errors=COL_ERRORS,
-        errors_to_classify=ERRORS_TO_CLASSIFY,
         features=FEATURES,
         target=COL_ERRORS
     )
 
+    logger.info("Transforming test data.")
+    test = wrap_transform_data(
+        df=df_test,
+        col_power=COL_POWER,
+        min_power=MIN_POWER,
+        features=FEATURES,
+        target=COL_ERRORS
+    )
+    
     # Create local output directories. These directories live on the container that is spun up.
     try:
         os.makedirs("/opt/ml/processing/train")
@@ -308,11 +281,12 @@ if __name__ == '__main__':
 
     # Save data locally on the container that is spun up.
     try:
-        pd.DataFrame(x_train).to_csv("/opt/ml/processing/train/x_train.csv", header=True, index=False)
-        pd.DataFrame(y_train).to_csv("/opt/ml/processing/train/y_train.csv", header=True, index=False)
-        pd.DataFrame(x_val).to_csv("/opt/ml/processing/validation/x_val.csv", header=True, index=False)
-        pd.DataFrame(y_val).to_csv("/opt/ml/processing/validation/y_val.csv", header=True, index=False)
-        pd.DataFrame(df_test).to_csv("/opt/ml/processing/test/test.csv", header=True, index=False)
+        pd.DataFrame(train).to_csv("/opt/ml/processing/train/train.csv", header=False, index=False)
+        pd.DataFrame(train).to_csv("/opt/ml/processing/train/train_w_header.csv", header=True, index=False)
+        pd.DataFrame(val).to_csv("/opt/ml/processing/validation/val.csv", header=False, index=False)
+        pd.DataFrame(val).to_csv("/opt/ml/processing/validation/val_w_header.csv", header=True, index=False)
+        pd.DataFrame(test).to_csv("/opt/ml/processing/test/test.csv", header=False, index=False)
+        pd.DataFrame(test).to_csv("/opt/ml/processing/test/test_w_header.csv", header=True, index=False)
         logger.info("Files Successfully Written Locally")
     except Exception as e:
         logger.debug("Could Not Write the Files")
