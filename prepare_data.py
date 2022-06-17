@@ -13,6 +13,23 @@ logger.addHandler(logging.StreamHandler())
 pd.options.mode.chained_assignment = None  # default='warn'
 
 
+# ----- CONSTANTS ----- #
+# Columns of df
+# Error column <> target
+COL_ERRORS = 'subtraction'
+# Power produced column (used for filtering out small values)
+COL_POWER = 'power'
+# Features to consider for the model
+FEATURES = ['wind_speed', 'power', 'nacelle_direction', 'wind_direction',
+            'rotor_speed', 'generator_speed', 'temp_environment',
+            'temp_hydraulic_oil', 'temp_gear_bearing', 'cosphi',
+            'blade_angle_avg', 'hydraulic_pressure']
+# Power values to filter out
+MIN_POWER = 0.05
+# Filname of the raw data file
+RAW_DATA_FILE = 'wind_turbines.csv'
+
+
 def assert_col_of_df(df: pd.DataFrame, col: Union[List[str], str]) -> None:
     """Helper function to assert that a column `col` is a column of `df`.
     
@@ -85,7 +102,7 @@ def fill_nulls(df: pd.DataFrame, col: str) -> pd.DataFrame:
         col: Column of `df` with nulls filled with 0.
         
     Returns:
-        Dataframe with nulls filled.
+        pd.DataFrame: Dataframe with nulls filled.
     """
     assert_col_of_df(df=df, col=col)
         
@@ -111,7 +128,7 @@ def filter_power(df: pd.DataFrame, col_power: str, min_power: float) -> pd.DataF
             values are filtered out.
         
     Returns:
-        Dataframe filtered on `min_power`.
+        pd.DataFrame: Dataframe filtered on `min_power`.
     """
     assert_col_of_df(df=df, col=col_power)
     
@@ -128,7 +145,7 @@ def filter_power(df: pd.DataFrame, col_power: str, min_power: float) -> pd.DataF
     return df
 
 
-def process_target(df: pd.DataFrame, col_target: str):
+def process_target(df: pd.DataFrame, col_target: str) -> pd.DataFrame:
     """Processes the target column by:
         1. Replacing error types 1 and 0 with 1.
         2. Filling nulls with 0.
@@ -139,7 +156,7 @@ def process_target(df: pd.DataFrame, col_target: str):
         col_target: Target column
     
     Returns:
-        Dataframe with target column processed.
+        pd.DataFrame: Dataframe with target column processed.
     """
     assert_col_of_df(df=df, col=col_target)
     
@@ -162,7 +179,7 @@ def wrap_transform_data(
     min_power: float,
     features: List[str],
     target: str
-    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> pd.DataFrame:
     """Wrapper for transforming the data for the model
     
     Processing is applied in the following steps:
@@ -180,7 +197,7 @@ def wrap_transform_data(
         target: Target column.
     
     Returns:
-        
+        pd.DataFrame: Transformed dataframe.
     """
     # 1. Filter out low power
     df = filter_power(df=df, col_power=col_power, min_power=min_power)
@@ -196,23 +213,6 @@ def wrap_transform_data(
     df = df[[target] + features]
     
     return df
-
-
-# ----- CONSTANTS ----- #
-# Columns of df
-# Error column <> target
-COL_ERRORS = 'subtraction'
-# Power produced column (used for filtering out small values)
-COL_POWER = 'power'
-# Features to consider for the model
-FEATURES = ['wind_speed', 'power', 'nacelle_direction', 'wind_direction',
-            'rotor_speed', 'generator_speed', 'temp_environment',
-            'temp_hydraulic_oil', 'temp_gear_bearing', 'cosphi',
-            'blade_angle_avg', 'hydraulic_pressure']
-# Power values to filter out
-MIN_POWER = 0.05
-# Filname of the raw data file
-RAW_DATA_FILE = 'wind_turbines.csv'
 
 
 if __name__ == '__main__':
