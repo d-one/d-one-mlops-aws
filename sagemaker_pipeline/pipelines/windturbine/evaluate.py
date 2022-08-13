@@ -1,6 +1,6 @@
 # ================================================================================
 # Author:      Heiko Kromer @ D ONE - 2022
-# Description: This script contains the evaluation logic logic.
+# Description: This script contains the evaluation logic.
 # ================================================================================
 import json
 import logging
