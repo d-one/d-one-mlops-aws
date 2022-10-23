@@ -380,16 +380,16 @@ def get_pipeline(
         right=accuracy_value
     )
 
+    step_fail = FailStep(
+        name=fail_step_name,
+        error_message=Join(on=" ", values=["Execution failed due to accuracy <", accuracy_value]),
+    )
+
     step_cond = ConditionStep(
         name=condition_step_name,
         conditions=[cond_lte],
         if_steps=[step_register],
-        else_steps=[],
-    )
-
-    step_fail = FailStep(
-        name=fail_step_name,
-        error_message=Join(on=" ", values=["Execution failed due to accuracy <", accuracy_value]),
+        else_steps=[step_fail],
     )
 
     # Pipeline instance
@@ -404,7 +404,6 @@ def get_pipeline(
             step_train,
             step_eval,
             step_cond,
-            step_fail
         ],
         sagemaker_session=sagemaker_session,
     )
