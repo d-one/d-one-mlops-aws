@@ -403,7 +403,8 @@ def get_pipeline(
             step_process,
             step_train,
             step_eval,
-            step_cond
+            step_cond,
+            step_fail
         ],
         sagemaker_session=sagemaker_session,
     )
