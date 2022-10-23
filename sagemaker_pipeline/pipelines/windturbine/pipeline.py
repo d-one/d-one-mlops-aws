@@ -15,11 +15,15 @@ from sagemaker.processing import ProcessingInput, ProcessingOutput, ScriptProces
 from sagemaker.sklearn.processing import SKLearnProcessor
 from sagemaker.workflow.condition_step import ConditionStep, JsonGet
 from sagemaker.workflow.conditions import ConditionGreaterThan
+from sagemaker.workflow.fail_step import FailStep
 from sagemaker.workflow.parameters import ParameterString
 from sagemaker.workflow.pipeline import Pipeline
 from sagemaker.workflow.properties import PropertyFile
 from sagemaker.workflow.step_collections import RegisterModel
 from sagemaker.workflow.steps import ProcessingStep, TrainingStep
+from sagemaker.workflow.functions import Join
+
+
 from typing import List
  
 BASE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -78,7 +82,10 @@ EVALUATION_STEP_NAME = f'{BASE_JOB_PREFIX}Evaluation'
 REGISTER_MODEL_STEP_NAME = f'{BASE_JOB_PREFIX}RegisterModel'
 # Name for the condition step
 CONDITON_STEP_NAME = f'{BASE_JOB_PREFIX}AccuracyCondition'
-
+# Name for the fail ste
+FAIL_STEP_NAME = f'{BASE_JOB_PREFIX}Fail'
+# Accuracy value that the model need to reach as minimum
+ACCURACY_CONDITION  = 0.75
 
 def get_session(region, default_bucket):
     """Gets the sagemaker session based on the region.
@@ -162,7 +169,8 @@ def get_pipeline(
     evaluation_step_name: str = EVALUATION_STEP_NAME,
     register_model_step_name: str = REGISTER_MODEL_STEP_NAME,
     condition_step_name: str = CONDITON_STEP_NAME,
-    
+    fail_step_name: str = FAIL_STEP_NAME,
+    accuracy_value: float = ACCURACY_CONDITION
     ):
     """Gets a SageMaker ML Pipeline instance working with windturbine data.
     
@@ -185,7 +193,8 @@ def get_pipeline(
         evaluation_step_name: Name for the evaluation pipeline step.
         register_model_step_name: Name for the register model step.
         condition_step_name: Name for the step for the condition.
-
+        fail_step_name: Name for the step when condition fails.
+        accuracy_value: Minimum accuracy required for model to register. Used in condition step.
         
     Returns:
         An instance of a pipeline.
@@ -368,7 +377,7 @@ def get_pipeline(
             property_file=evaluation_report,
             json_path="binary_classification_metrics.accuracy.value"
         ),
-        right=0.75
+        right=accuracy_value
     )
 
     step_cond = ConditionStep(
@@ -376,6 +385,11 @@ def get_pipeline(
         conditions=[cond_lte],
         if_steps=[step_register],
         else_steps=[],
+    )
+
+    step_fail = FailStep(
+        name=fail_step_name,
+        error_message=Join(on=" ", values=["Execution failed due to accuracy <", accuracy_value]),
     )
 
     # Pipeline instance
